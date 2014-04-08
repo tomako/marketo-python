@@ -55,7 +55,7 @@ class TestExceptionParser(unittest.TestCase):
                             '<detail>' \
                             '<ns1:serviceException xmlns:ns1="http://www.marketo.com/mktows/">' \
                             '<name>mktServiceException</name>' \
-                            '<message>No lead found with EMAIL = john@do.com (20103)</message>' \
+                            '<message>No lead found with EMAIL = john@doe (20103)</message>' \
                             '<code>20103</code>' \
                             '</ns1:serviceException>' \
                             '</detail>' \
@@ -65,7 +65,7 @@ class TestExceptionParser(unittest.TestCase):
         exception_instance = exceptions.unwrap(exception_message)
 
         self.assertTrue(isinstance(exception_instance, exceptions.MktLeadNotFound))
-        self.assertEqual(exception_instance.args, ("No lead found with EMAIL = john@do.com (20103)", ))
+        self.assertEqual(exception_instance.args, ("No lead found with EMAIL = john@doe (20103)", ))
 
     def test_fault_without_details(self):
         exception_message = '<?xml version="1.0" encoding="UTF-8"?>' \
@@ -83,14 +83,41 @@ class TestExceptionParser(unittest.TestCase):
         self.assertEqual(exception_instance.args, ("Bad Request", ))
 
 
+class TestLeadRecord(unittest.TestCase):
+
+    def test_unwrap(self):
+        response = "<root>" \
+                   "<leadRecord>" \
+                   "<Id>101</Id>" \
+                   "<Email>john@doe.com</Email>" \
+                   "<leadAttributeList>" \
+                   "<attribute>" \
+                   "<attrName>FirstName</attrName>" \
+                   "<attrType>string</attrType>" \
+                   "<attrValue>John</attrValue>" \
+                   "</attribute>" \
+                   "<attribute>" \
+                   "<attrName>LastName</attrName>" \
+                   "<attrType>string</attrType>" \
+                   "<attrValue>Doe</attrValue>" \
+                   "</attribute>" \
+                   "</leadAttributeList>" \
+                   "</leadRecord>" \
+                   "</root>"
+        lead_record = get_lead.unwrap(response)
+        self.assertEqual(lead_record.id, 101)
+        self.assertEqual(lead_record.email, "john@doe.com")
+        self.assertEqual(lead_record.attributes, {"FirstName": "John", "LastName": "Doe"})
+
+
 class TestGetLead(unittest.TestCase):
 
     def test_get_lead_wrap(self):
-        self.assertEqual(get_lead.wrap("email", "john@do.com"),
+        self.assertEqual(get_lead.wrap("email", "john@doe"),
                          u"<ns1:paramsGetLead>"
                          u"<leadKey>"
                          u"<keyType>EMAIL</keyType>"
-                         u"<keyValue>john@do.com</keyValue>"
+                         u"<keyValue>john@doe</keyValue>"
                          u"</leadKey>"
                          u"</ns1:paramsGetLead>")
         self.assertEqual(get_lead.wrap("cookie", "561-HYG-937&token:_mch-marketo.com-1258067434006-50277"),
@@ -105,11 +132,11 @@ class TestGetLead(unittest.TestCase):
 class TestGetLeadActivity(unittest.TestCase):
 
     def test_get_lead_activity_wrap(self):
-        self.assertEqual(get_lead_activity.wrap("john@do.com"),
+        self.assertEqual(get_lead_activity.wrap("john@doe"),
                          u"<ns1:paramsGetLeadActivity>"
                          u"<leadKey>"
                          u"<keyType>EMAIL</keyType>"
-                         u"<keyValue>john@do.com</keyValue>"
+                         u"<keyValue>john@doe</keyValue>"
                          u"</leadKey>"
                          u"</ns1:paramsGetLeadActivity>")
 
@@ -133,40 +160,87 @@ class TestRequestCampaign(unittest.TestCase):
 class TestSyncLead(unittest.TestCase):
 
     def test_sync_lead_wrap(self):
-        # with empty attribute set
-        self.assertEqual(sync_lead.wrap(email="john@do.com", attributes=()),
+        # with marketo_id as id field
+        self.assertEqual(sync_lead.wrap(marketo_id=101, attributes=()),
                          u"<mkt:paramsSyncLead>"
                          u"<leadRecord>"
-                         u"<Email>john@do.com</Email>"
+                         u"<Id>101</Id>"
                          u"<leadAttributeList></leadAttributeList>"
                          u"</leadRecord>"
                          u"<returnLead>true</returnLead>"
-                         u"<marketoCookie></marketoCookie>"
+                         u"</mkt:paramsSyncLead>")
+
+        # with email as id field
+        self.assertEqual(sync_lead.wrap(email="john@doe", attributes=()),
+                         u"<mkt:paramsSyncLead>"
+                         u"<leadRecord>"
+                         u"<Email>john@doe</Email>"
+                         u"<leadAttributeList></leadAttributeList>"
+                         u"</leadRecord>"
+                         u"<returnLead>true</returnLead>"
+                         u"</mkt:paramsSyncLead>")
+
+        # with marketo_cookie as id field
+        self.assertEqual(sync_lead.wrap(marketo_cookie="__marketo_cookie__", attributes=()),
+                         u"<mkt:paramsSyncLead>"
+                         u"<leadRecord>"
+                         u"<leadAttributeList></leadAttributeList>"
+                         u"</leadRecord>"
+                         u"<returnLead>true</returnLead>"
+                         u"<marketoCookie>__marketo_cookie__</marketoCookie>"
+                         u"</mkt:paramsSyncLead>")
+
+        # with foreign_id as id field
+        self.assertEqual(sync_lead.wrap(foreign_id="__foreign_id__", attributes=()),
+                         u"<mkt:paramsSyncLead>"
+                         u"<leadRecord>"
+                         u"<ForeignSysPersonId>__foreign_id__</ForeignSysPersonId>"
+                         u"<ForeignSysType>CUSTOM</ForeignSysType>"
+                         u"<leadAttributeList></leadAttributeList>"
+                         u"</leadRecord>"
+                         u"<returnLead>true</returnLead>"
+                         u"</mkt:paramsSyncLead>")
+
+        # with all id fields
+        self.assertEqual(sync_lead.wrap(marketo_id=101,
+                                        email="john@doe",
+                                        foreign_id="__foreign_id__",
+                                        marketo_cookie="__marketo_cookie__",
+                                        attributes=()),
+                         u"<mkt:paramsSyncLead>"
+                         u"<leadRecord>"
+                         u"<Id>101</Id>"
+                         u"<Email>john@doe</Email>"
+                         u"<ForeignSysPersonId>__foreign_id__</ForeignSysPersonId>"
+                         u"<ForeignSysType>CUSTOM</ForeignSysType>"
+                         u"<leadAttributeList></leadAttributeList>"
+                         u"</leadRecord>"
+                         u"<returnLead>true</returnLead>"
+                         u"<marketoCookie>__marketo_cookie__</marketoCookie>"
                          u"</mkt:paramsSyncLead>")
 
         # with 1 attribute
-        self.assertEqual(sync_lead.wrap(email="john@do.com", attributes=(("Name", "string", u"John Do, a hős"),)),
+        self.assertEqual(sync_lead.wrap(marketo_id=101, attributes=(("Name", "string", u"John Doe, a hős"),)),
                          u"<mkt:paramsSyncLead>"
                          u"<leadRecord>"
-                         u"<Email>john@do.com</Email>"
+                         u"<Id>101</Id>"
                          u"<leadAttributeList>"
                          u"<attribute>"
                          u"<attrName>Name</attrName>"
                          u"<attrType>string</attrType>"
-                         u"<attrValue>John Do, a hős</attrValue>"
+                         u"<attrValue>John Doe, a hős</attrValue>"
                          u"</attribute>"
                          u"</leadAttributeList>"
                          u"</leadRecord>"
                          u"<returnLead>true</returnLead>"
-                         u"<marketoCookie></marketoCookie>"
                          u"</mkt:paramsSyncLead>")
 
         # with more attributes
-        self.assertEqual(sync_lead.wrap(email="john@do.com", attributes=(("Name", "string", "John Do"),
-                                                                         ("Age", "integer", "20"),)),
+        self.assertEqual(sync_lead.wrap(email="john@doe", attributes=(("Name", "string", "John Do"),
+                                                                      ("Age", "integer", "20"),)),
                          u"<mkt:paramsSyncLead>"
                          u"<leadRecord>"
-                         u"<Email>john@do.com</Email>"
+                         u"<Email>john@doe</Email>"
                          u"<leadAttributeList>"
                          u"<attribute>"
                          u"<attrName>Name</attrName>"
@@ -181,7 +255,6 @@ class TestSyncLead(unittest.TestCase):
                          u"</leadAttributeList>"
                          u"</leadRecord>"
                          u"<returnLead>true</returnLead>"
-                         u"<marketoCookie></marketoCookie>"
                          u"</mkt:paramsSyncLead>")
 
 
@@ -241,14 +314,14 @@ class TestClient(unittest.TestCase):
         mock_response = Mock(status_code=200, text="<root>"
                                                    "<leadRecord>"
                                                    "<Id>100</Id>"
-                                                   "<Email>john@do.com</Email>"
+                                                   "<Email>john@doe</Email>"
                                                    "</leadRecord>"
                                                    "</root>")
         with patch.object(client, "request", return_value=mock_response):
-            lead = client.get_lead(email="john@do.com")
+            lead = client.get_lead(email="john@doe")
 
         self.assertEqual(lead.id, 100)
-        self.assertEqual(lead.email, "john@do.com")
+        self.assertEqual(lead.email, "john@doe")
 
 
 if __name__ == '__main__':

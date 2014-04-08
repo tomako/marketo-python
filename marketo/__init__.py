@@ -113,18 +113,39 @@ class Client:
         else:
             raise Exception(response.text)
 
-    def sync_lead(self, email=None, attributes=None):
+    def sync_lead(self, marketo_id=None, email=None, marketo_cookie=None, foreign_id=None, attributes=None):
+        """
+        This function will insert or update a single lead record.
+                When updating an existing lead, the lead can be identified with one of the following keys:
 
-        if not email or not isinstance(email, (str, unicode)):
-            raise ValueError('Must supply lead id as a non empty string.')
+        If an existing match is found, the call will perform an update.
+        If not, it will insert and create a new lead.
+        Anonymous leads can be updated using the Marketo Cookie ID.
+        http://developers.marketo.com/documentation/soap/synclead/
 
-        if not attributes or not isinstance(attributes, tuple):
-            raise ValueError('Must supply attributes as a non empty tuple.')
+        :param marketo_id:
+        :param email:
+        :param marketo_cookie:
+        :param foreign_id:
+        :param attributes:
+        :return: :raise exceptions.unwrap:
+        """
+        if not (marketo_id or email or marketo_cookie or foreign_id):
+            raise ValueError('Must supply at least one id for the lead.')
 
-        body = sync_lead.wrap(email, attributes)
+        if not attributes:
+            raise ValueError('Must supply attributes as a non empty iterable object.')
+
+        body = sync_lead.wrap(marketo_id=marketo_id,
+                              email=email,
+                              marketo_cookie=marketo_cookie,
+                              foreign_id=foreign_id,
+                              attributes=attributes)
 
         response = self.request(body)
+
         if response.status_code == 200:
-            return sync_lead.unwrap(response)
+            return sync_lead.unwrap(response.text.encode("utf-8"))
         else:
-            raise Exception(response.text)
+            raise exceptions.unwrap(response.text)
+
